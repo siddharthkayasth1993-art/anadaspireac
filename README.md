@@ -32,3 +32,4 @@ Android Chrome: menu > **Install app**. iPhone Safari: Share > **Add to Home Scr
 - Excel exports download as .csv files that open directly in Excel.
 - Audit log is stored in the `log` collection (viewable in the Firebase console).
 - The free tier is far more than a 12-wing society needs.
+- 
