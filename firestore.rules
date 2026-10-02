@@ -5,7 +5,10 @@ service cloud.firestore {
     function ok() { return request.auth != null && u().role != 'pending'; }
     function role() { return u().role; }
     function staff() { return ok() && role() in ['admin','committee']; }
+    function coll() { return ok() && role() in ['admin','committee','coordinator']; }
     function scoped(d) { return staff() || (role() == 'coordinator' && d.wing == u().wing) || (role() == 'resident' && d.flatId == u().flatId); }
+    function lk() { return exists(/databases/$(database)/documents/settings/main) ? get(/databases/$(database)/documents/settings/main).data.get('lockedUpTo', '') : ''; }
+    function mo(d) { return 'month' in d ? d.month : d.date.substring(0, 7); }
     match /users/{id} {
       allow read: if request.auth != null && (request.auth.uid == id || (ok() && role() == 'admin'));
       allow create: if request.auth.uid == id && request.resource.data.role == 'pending';
@@ -17,12 +20,26 @@ service cloud.firestore {
     }
     match /{c}/{id} {
       allow read: if ok() && c in ['payments','donations'] && scoped(resource.data);
-      allow create: if ok() && c in ['payments','donations'] && (staff() || (role() == 'coordinator' && request.resource.data.wing == u().wing));
-      allow delete: if ok() && c in ['payments','donations','expenses'] && role() == 'admin';
+      allow create: if ok() && c in ['payments','donations'] && (staff() || (role() == 'coordinator' && request.resource.data.wing == u().wing)) && mo(request.resource.data) > lk();
+      allow delete: if ok() && c in ['payments','donations','expenses'] && role() == 'admin' && mo(resource.data) > lk();
     }
     match /expenses/{id} {
+      allow read: if ok() && (staff() || resource.data.fund == 'event' || (resource.data.fund == 'maintenance' && resource.data.wing == u().wing));
+      allow create: if ok() && (staff() || (role() == 'coordinator' && request.resource.data.fund == 'maintenance' && request.resource.data.wing == u().wing)) && mo(request.resource.data) > lk();
+      allow update: if staff();
+    }
+    match /settings/{id} {
       allow read: if ok();
-      allow create, update: if staff();
+      allow write: if ok() && role() == 'admin';
+    }
+    match /counters/{id} {
+      allow read: if coll();
+      allow create: if coll() && request.resource.data.n == 1;
+      allow update: if coll() && request.resource.data.n == resource.data.n + 1;
+    }
+    match /bills/{id} {
+      allow read, create: if coll();
+      allow delete: if ok() && role() == 'admin';
     }
     match /log/{id} {
       allow read: if ok() && role() == 'admin';
