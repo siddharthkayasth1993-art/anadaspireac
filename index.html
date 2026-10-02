@@ -1,0 +1,82 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Society Manager</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#1f1b3a">
+<style>
+:root{--ink:#1f1b3a;--gold:#f2a900;--bg:#f6f5fb;--line:#dcd9ec;--ok:#1a7f4b;--bad:#c0392b}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--ink);color:#fff;display:flex;gap:10px;align-items:center;padding:10px 14px;flex-wrap:wrap}header span{flex:1;opacity:.7;font-size:13px}
+nav{display:flex;overflow-x:auto;background:#fff;border-bottom:2px solid var(--line)}nav a{padding:11px 16px;cursor:pointer;white-space:nowrap}nav a.on{border-bottom:3px solid var(--gold);font-weight:700;margin-bottom:-2px}
+main{padding:14px;max-width:960px;margin:auto}h3{margin:18px 0 8px}
+button,input,select{font:inherit;padding:8px 11px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}button{cursor:pointer}button.p{background:var(--gold);border-color:var(--gold);font-weight:700}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.c{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px}.c small{display:block;opacity:.65}.c b{font-size:22px}
+.w{overflow-x:auto}table{border-collapse:collapse;width:100%;background:#fff}th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{background:#efedf9}
+.login{max-width:320px;margin:12vh auto;display:grid;gap:10px;padding:16px}dialog{border:0;border-radius:10px;padding:18px;width:min(92vw,380px)}dialog label{display:block;margin:8px 0;font-size:13px}dialog input,dialog select{width:100%}menu{display:flex;gap:8px;justify-content:flex-end;padding:0}
+.bw{height:10px;background:var(--gold);border-radius:5px}.pos{color:var(--ok)}.neg{color:var(--bad)}
+@media print{header,nav,.bar{display:none}}
+</style></head><body><div id="app"></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+// 1) PASTE YOUR FIREBASE WEB CONFIG HERE (see README.md)
+const cfg={apiKey:"AIzaSyAYfZZgDhR9L4eDiTzgdUlq2lnNbokVgzI",authDomain:"society-manager-80134.firebaseapp.com",projectId:"society-manager-80134",appId:"1:899216709642:web:2525e4a7966ffed03667f3"};
+const SOCIETY="Society Manager",EVENT="Navratri / Garba 2026";
+const MODES=["Cash","UPI","Bank"],CATS=["Music/DJ","Sound","Decoration","Lights","Stage","Prizes","Refreshments","Security","Miscellaneous"];
+firebase.initializeApp(cfg);const auth=firebase.auth(),db=firebase.firestore();db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js");
+const $=s=>document.querySelector(s),app=$("#app"),V={},A={};
+let me=null,tab="dash",unsub=[],D={flats:[],pay:[],don:[],exp:[],users:[]},month=new Date().toISOString().slice(0,7),wf="";
+const R=()=>me.role,isAdmin=()=>R()==="admin",canEdit=()=>["admin","committee"].includes(R()),canCollect=()=>canEdit()||R()==="coordinator";
+const inr=n=>"₹"+(+n||0).toLocaleString("en-IN"),today=()=>new Date().toISOString().slice(0,10),sum=a=>a.reduce((s,x)=>s+(+x.amount||0),0);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const bld=w=>"Building "+(Math.floor((w.charCodeAt(0)-65)/2)+1),flat=id=>D.flats.find(f=>f.id===id)||{};
+const log=a=>db.collection("log").add({who:me.name,action:a,ts:Date.now()});
+const add=(c,o)=>db.collection(c).add({...o,byUid:me.uid,by:me.name,ts:Date.now()}).then(()=>log("Added "+c+" "+(o.flatId||o.category||"")+" "+(o.amount||""))).catch(e=>alert(e.message));
+A.del=(c,id)=>confirm("Delete this entry?")&&db.collection(c).doc(id).delete().then(()=>log("Deleted "+c+" "+id)).catch(e=>alert(e.message));
+const tbl=(h,r)=>`<div class="w"><table><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr>${r.map(x=>`<tr>${x.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")||`<tr><td colspan="${h.length}">Nothing here yet.</td></tr>`}</table></div>`;
+const csv=(n,rows)=>{const t=rows.map(r=>r.map(c=>'"'+String(c??"").replace(/"/g,'""')+'"').join(",")).join("\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/csv"}));a.download=n+".csv";a.click()};
+function form(title,fields,cb){const d=document.createElement("dialog");
+ d.innerHTML=`<form method="dialog"><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${f.o?`<select name="${f.n}">${f.o.map(o=>`<option ${o===f.v?"selected":""}>${esc(o)}</option>`).join("")}</select>`:`<input name="${f.n}" type="${f.t||"text"}" value="${esc(f.v??"")}">`}</label>`).join("")}<menu><button value="x">Cancel</button><button value="ok" class="p">Save</button></menu></form>`;
+ document.body.append(d);d.showModal();d.onclose=()=>{if(d.returnValue==="ok")cb(Object.fromEntries(new FormData(d.querySelector("form"))));d.remove()}}
+function login(){app.innerHTML=`<div class="login"><h2>🏠 ${SOCIETY}</h2><input id="e" type="email" placeholder="Email"><input id="p" type="password" placeholder="Password"><button class="p" onclick="go(1)">Log in</button><button onclick="go(0)">Create account</button></div>`}
+const go=l=>{const e=$("#e").value,p=$("#p").value;(l?auth.signInWithEmailAndPassword(e,p):auth.createUserWithEmailAndPassword(e,p)).catch(x=>alert(x.message))};
+const msg=t=>app.innerHTML=`<div class="login"><p>${t}</p><button onclick="auth.signOut()">Log out</button></div>`;
+auth.onAuthStateChanged(async u=>{unsub.forEach(f=>f());unsub=[];if(!u)return login();
+ const ref=db.collection("users").doc(u.uid);let s=await ref.get();
+ if(!s.exists){await ref.set({name:u.email,email:u.email,role:"pending"});s=await ref.get()}
+ me={uid:u.uid,...s.data()};if(me.role==="pending")return msg("Your account is waiting for approval. Ask the admin to assign your role, then log in again.");listen()});
+const sc=c=>{let q=db.collection(c);if(R()==="coordinator")q=q.where("wing","==",me.wing);if(R()==="resident")q=q.where("flatId","==",me.flatId);return q};
+function listen(){const w=(k,q)=>unsub.push(q.onSnapshot(s=>{D[k]=s.docs.map(d=>({id:d.id,...d.data()}));render()},e=>console.warn(k,e.message)));
+ w("flats",R()==="resident"?db.collection("flats").where("flatId","==",me.flatId):sc("flats"));w("pay",sc("payments"));w("don",sc("donations"));w("exp",db.collection("expenses"));if(isAdmin())w("users",db.collection("users"));render()}
+function render(){if(!me||me.role==="pending")return;
+ const t={dash:"Dashboard",maint:"Maintenance",don:"Donations",exp:"Expenses",...(isAdmin()?{flats:"Flats",users:"Users"}:{})};if(!t[tab])tab="dash";
+ app.innerHTML=`<header><b>🏠 ${SOCIETY}</b><span>${esc(me.name)} · ${R()}</span><button onclick="auth.signOut()">Log out</button></header><nav>${Object.entries(t).map(([k,v])=>`<a class="${k===tab?"on":""}" onclick="tab='${k}';render()">${v}</a>`).join("")}</nav><main>${V[tab]()}</main>`}
+const ids=()=>D.flats.map(f=>f.id).sort();
+V.dash=()=>{const ex=D.exp.filter(e=>e.status!=="pending"),td=sum(D.don),te=sum(ex),bal=td-te,fl=D.flats,
+ due=fl.map(f=>({f,p:sum(D.pay.filter(x=>x.flatId===f.id&&x.month===month))})),paid=due.filter(x=>x.p>=x.f.maintenance).length,
+ cat=CATS.map(c=>[c,sum(ex.filter(e=>e.category===c))]).filter(x=>x[1]),mx=Math.max(1,...cat.map(x=>x[1]));
+ return`<h3>${EVENT}</h3><div class="g"><div class="c"><small>Donations</small><b>${inr(td)}</b></div><div class="c"><small>Expenses (approved)</small><b>${inr(te)}</b></div><div class="c"><small>Balance</small><b class="${bal<0?"neg":"pos"}">${inr(bal)}</b></div><div class="c"><small>Flats donated</small><b>${new Set(D.don.map(d=>d.flatId).filter(x=>x&&x!=="Other")).size} / ${fl.length}</b></div></div>
+ <h3>Maintenance, ${month}</h3><div class="g"><div class="c"><small>Collected</small><b>${inr(sum(D.pay.filter(x=>x.month===month)))}</b></div><div class="c"><small>Flats paid in full</small><b>${paid} / ${fl.length}</b></div></div>
+ <h3>Expenses by category</h3>${cat.map(([c,v])=>`<div>${c} <b>${inr(v)}</b><div class="bw" style="width:${v/mx*100}%"></div></div>`).join("")||"No approved expenses yet."}
+ <div class="bar"><button onclick="print()">Print final report</button></div>`};
+V.maint=()=>{const wings=[...new Set(D.flats.map(f=>f.wing))].sort(),fl=D.flats.filter(f=>!wf||f.wing===wf).sort((a,b)=>a.id.localeCompare(b.id,0,{numeric:true}));
+ A.m=fl.map(f=>{const p=sum(D.pay.filter(x=>x.flatId===f.id&&x.month===month));return[f.id,f.owner||"",f.maintenance||0,p,p>=f.maintenance?"Paid":p>0?"Partial":"Pending"]});
+ const ic={Paid:"✅ ",Partial:"🟡 ",Pending:"🔴 "};
+ return`<div class="bar"><input type="month" value="${month}" onchange="month=this.value;render()"><select onchange="wf=this.value;render()"><option value="">All wings</option>${wings.map(w=>`<option ${w===wf?"selected":""} value="${w}">Wing ${w}</option>`).join("")}</select>${canCollect()?`<button class="p" onclick="A.pay()">Add payment</button>`:""}<button onclick="csv('maintenance-'+month,[['Flat','Owner','Due','Paid','Status'],...A.m])">Export Excel</button></div>
+ ${tbl(["Flat","Owner","Due","Paid","Status"],A.m.map(r=>[r[0],esc(r[1]),inr(r[2]),inr(r[3]),ic[r[4]]+r[4]]))}
+ <h3>Payments, ${month}</h3>${tbl(["Date","Flat","Amount","Mode","Receipt/Ref","Entered by",""],D.pay.filter(x=>x.month===month&&(!wf||x.wing===wf)).sort((a,b)=>b.ts-a.ts).map(x=>[x.date,x.flatId,inr(x.amount),x.mode,esc(x.ref),esc(x.by),isAdmin()?`<a onclick="A.del('payments','${x.id}')">✕</a>`:""]))}`};
+A.pay=()=>form("Maintenance payment",[{n:"flatId",l:"Flat",o:ids()},{n:"month",l:"For month",t:"month",v:month},{n:"amount",l:"Amount",t:"number"},{n:"mode",l:"Mode",o:MODES},{n:"ref",l:"Receipt / reference no."},{n:"date",l:"Date",t:"date",v:today()}],o=>add("payments",{...o,amount:+o.amount,wing:flat(o.flatId).wing}));
+V.don=()=>`<div class="bar">${canCollect()?`<button class="p" onclick="A.dn()">Add donation</button>`:""}<button onclick="csv('donations',[['Date','Flat','Donor','Amount','Mode','Ref'],...D.don.map(x=>[x.date,x.flatId,x.donor,x.amount,x.mode,x.ref])])">Export Excel</button></div><div class="c"><small>Total donations</small><b>${inr(sum(D.don))}</b></div>
+ ${tbl(["Date","Flat","Donor","Amount","Mode","Ref","Entered by",""],D.don.sort((a,b)=>b.ts-a.ts).map(x=>[x.date,x.flatId,esc(x.donor),inr(x.amount),x.mode,esc(x.ref),esc(x.by),isAdmin()?`<a onclick="A.del('donations','${x.id}')">✕</a>`:""]))}`;
+A.dn=()=>form("Donation",[{n:"flatId",l:"Flat (or Other for sponsors)",o:["Other",...ids()]},{n:"donor",l:"Donor name"},{n:"amount",l:"Amount",t:"number"},{n:"mode",l:"Mode",o:MODES},{n:"ref",l:"Receipt / reference no."},{n:"date",l:"Date",t:"date",v:today()}],o=>add("donations",{...o,amount:+o.amount,wing:flat(o.flatId).wing||""}));
+V.exp=()=>`<div class="bar">${canEdit()?`<button class="p" onclick="A.ex()">Add expense</button>`:""}<button onclick="csv('expenses',[['Date','Category','Description','Vendor','Amount','Status'],...D.exp.map(x=>[x.date,x.category,x.desc,x.vendor,x.amount,x.status])])">Export Excel</button></div>
+ <div class="g"><div class="c"><small>Approved / paid</small><b>${inr(sum(D.exp.filter(e=>e.status!=="pending")))}</b></div><div class="c"><small>Waiting for approval</small><b>${inr(sum(D.exp.filter(e=>e.status==="pending")))}</b></div></div>
+ ${tbl(["Date","Category","Description","Vendor","Amount","Status","Added by","Approved by",""],D.exp.sort((a,b)=>b.ts-a.ts).map(x=>[x.date,x.category,esc(x.desc),esc(x.vendor),inr(x.amount),x.status,esc(x.by),esc(x.approvedBy),canEdit()&&x.status!=="paid"&&(x.status==="approved"||x.byUid!==me.uid||isAdmin())?`<button onclick="A.next('${x.id}','${x.status}')">${x.status==="pending"?"Approve":"Mark paid"}</button>`:"",].concat(isAdmin()?[]:[]).slice(0,9)))}`;
+A.ex=()=>form("Expense",[{n:"category",l:"Category",o:CATS},{n:"desc",l:"Description"},{n:"vendor",l:"Paid to / vendor"},{n:"amount",l:"Amount",t:"number"},{n:"mode",l:"Mode",o:MODES},{n:"date",l:"Date",t:"date",v:today()},{n:"bill",l:"Bill link (Google Drive)"}],o=>add("expenses",{...o,amount:+o.amount,status:"pending"}));
+A.next=(id,s)=>db.collection("expenses").doc(id).update(s==="pending"?{status:"approved",approvedBy:me.name}:{status:"paid"}).then(()=>log("Expense "+id+" -> "+(s==="pending"?"approved":"paid"))).catch(e=>alert(e.message));
+V.flats=()=>`<div class="bar"><button class="p" onclick="A.fl()">Add flat</button><button onclick="A.bulk()">Add many flats</button></div>${tbl(["Flat","Building","Wing","Owner","Monthly maintenance",""],D.flats.sort((a,b)=>a.id.localeCompare(b.id,0,{numeric:true})).map(f=>[f.id,bld(f.wing),f.wing,esc(f.owner),inr(f.maintenance),`<a onclick="A.fl('${f.id}')">Edit</a>`]))}`;
+A.fl=id=>{const f=flat(id);form(id?"Edit flat":"Add flat",[{n:"wing",l:"Wing (A to L)",v:f.wing},{n:"no",l:"Flat number",v:f.no},{n:"owner",l:"Owner name",v:f.owner},{n:"maintenance",l:"Monthly maintenance",t:"number",v:f.maintenance}],o=>{const w=o.wing.toUpperCase(),i=w+"-"+o.no;db.collection("flats").doc(i).set({flatId:i,wing:w,no:o.no,owner:o.owner,maintenance:+o.maintenance}).then(()=>log("Saved flat "+i)).catch(e=>alert(e.message))})};
+A.bulk=()=>form("Add many flats",[{n:"wing",l:"Wing (A to L)"},{n:"from",l:"First flat number",t:"number",v:101},{n:"count",l:"How many flats",t:"number",v:6},{n:"maintenance",l:"Monthly maintenance",t:"number"}],o=>{const w=o.wing.toUpperCase(),b=db.batch();for(let k=0;k<+o.count;k++){const n=+o.from+k,i=w+"-"+n;b.set(db.collection("flats").doc(i),{flatId:i,wing:w,no:String(n),owner:"",maintenance:+o.maintenance})}b.commit().then(()=>log("Bulk flats wing "+w)).catch(e=>alert(e.message))});
+V.users=()=>tbl(["Name","Email","Role","Wing","Flat",""],D.users.map(u=>[esc(u.name),esc(u.email),u.role,u.wing||"",u.flatId||"",`<a onclick="A.us('${u.id}')">Edit</a>`]));
+A.us=id=>{const u=D.users.find(x=>x.id===id);form("User",[{n:"name",l:"Name",v:u.name},{n:"role",l:"Role",o:["pending","admin","committee","coordinator","resident"],v:u.role},{n:"wing",l:"Wing (for coordinator)",v:u.wing},{n:"flatId",l:"Flat, e.g. A-101 (for resident)",v:u.flatId}],o=>db.collection("users").doc(id).update(o).then(()=>log("Updated user "+id)).catch(e=>alert(e.message)))};
+</script></body></html>
